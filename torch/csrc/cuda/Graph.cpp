@@ -6,6 +6,7 @@
 #include <torch/csrc/utils/pybind.h>
 
 #include <ATen/cuda/CUDAGraph.h>
+#include <ATen/cuda/CUDAGraphWithNodes.h>
 #include <c10/cuda/CUDAGraphsC10Utils.h>
 
 // Cargo culted partially from csrc/distributed/c10d/init.cpp

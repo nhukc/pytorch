@@ -10,6 +10,8 @@ from .._utils import _dummy_type
 if not hasattr(torch._C, "_CudaStreamBase"):
     # Define dummy base classes
     torch._C.__dict__["_CUDAGraph"] = _dummy_type("_CUDAGraph")
+    torch._C.__dict__["_CUDAGraphWithNodes"] = _dummy_type("_CUDAGraphWithNodes")
+    torch._C.__dict__["_CUDAGraphNode"] = _dummy_type("_CUDAGraphNode")
     torch._C.__dict__["_graph_pool_handle"] = _dummy_type("_graph_pool_handle")
     torch._C.__dict__["_cuda_isCurrentStreamCapturing"] = _dummy_type(
         "_cuda_isCurrentStreamCapturing"
@@ -18,6 +20,8 @@ if not hasattr(torch._C, "_CudaStreamBase"):
 from torch._C import (  # noqa: F401
     _cuda_isCurrentStreamCapturing,
     _CUDAGraph,
+    _CUDAGraphWithNodes,
+    _CUDAGraphNode,
     _graph_pool_handle,
 )
 
@@ -112,6 +116,104 @@ class CUDAGraph(torch._C._CUDAGraph):
         enabled via CUDAGraph.enable_debug_mode()
         """
         return super().debug_dump(debug_path)
+
+
+# Python shim for the node wrapper
+class CUDAGraphNode(torch._C._CUDAGraphNode):
+    r"""Wrapper around a CUDA graph node.
+    
+    Provides access to individual nodes within a captured CUDA graph,
+    allowing inspection of node properties and safe parameter updates.
+
+    .. warning::
+        This API is in beta and may change in future releases.
+    """
+
+    def __new__(cls, *args, **kwargs):
+        # CUDAGraphNode instances are created by CUDAGraphWithNodes, not directly by users
+        raise RuntimeError("CUDAGraphNode cannot be instantiated directly. "
+                         "Obtain instances from CUDAGraphWithNodes.get_nodes()")
+
+
+# Python shim for the extended graph class
+class CUDAGraphWithNodes(torch._C._CUDAGraphWithNodes):
+    r"""Extended CUDA graph with node access and parameter modification capabilities.
+    
+    Inherits all functionality from :class:`~torch.cuda.CUDAGraph` and adds:
+    - Node enumeration and introspection
+    - Automatic kernel naming via function symbols
+    - Safe parameter updates without recapture
+    
+    .. warning::
+        This API is in beta and may change in future releases.
+    """
+
+    def __new__(cls):
+        return super().__new__(cls)
+
+    def get_node_info(self, node_index):
+        r"""Get comprehensive information about a node.
+        
+        Arguments:
+            node_index (int): Index of the node to inspect
+            
+        Returns:
+            dict: Node information including name, type, and kernel-specific data
+        """
+        node = self.get_node(node_index)
+        info = {
+            'name': node.name(),
+            'type': node.type(),
+            'is_kernel': node.isKernelNode()
+        }
+        
+        if node.isKernelNode():
+            info.update({
+                'grid_dim': node.getKernelGridDim(),
+                'block_dim': node.getKernelBlockDim(), 
+                'shared_mem_bytes': node.getKernelSharedMemBytes(),
+                'automatic_name': node.getAutomaticKernelName()
+            })
+        
+        return info
+    
+    def print_nodes(self):
+        r"""Print a summary of all nodes in the graph."""
+        print(f"Graph contains {self.num_nodes()} nodes:")
+        for i in range(self.num_nodes()):
+            info = self.get_node_info(i)
+            print(f"  [{i}] {info['name']} (type: {info['type']})")
+            if info['is_kernel']:
+                print(f"      Grid: {info['grid_dim']}, Block: {info['block_dim']}")
+                if info['automatic_name']:
+                    print(f"      Function: {info['automatic_name']}")
+
+    def update_kernel_arg(self, node_ref, arg_index, value):
+        r"""Update a kernel argument with automatic type detection.
+        
+        Arguments:
+            node_ref (int or str): Node index or name
+            arg_index (int): Argument index to update
+            value: New value (Tensor, int, float, or pointer)
+        """
+        if isinstance(value, torch.Tensor):
+            if isinstance(node_ref, str):
+                self.update_kernel_tensor_arg(node_ref, arg_index, value)
+            else:
+                self.update_kernel_tensor_arg(node_ref, arg_index, value)
+        elif isinstance(value, int):
+            if isinstance(node_ref, str):
+                self.update_kernel_arg_int(node_ref, arg_index, value)
+            else:
+                self.update_kernel_arg_int(node_ref, arg_index, value)
+        elif isinstance(value, float):
+            if isinstance(node_ref, str):
+                self.update_kernel_arg_float(node_ref, arg_index, value)
+            else:
+                self.update_kernel_arg_float(node_ref, arg_index, value)
+        else:
+            raise TypeError(f"Unsupported argument type: {type(value)}. "
+                          "Supported types: Tensor, int, float")
 
 
 class graph:

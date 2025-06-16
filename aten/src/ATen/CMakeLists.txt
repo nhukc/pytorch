@@ -554,6 +554,7 @@ if(USE_CUDA AND NOT USE_ROCM)
       ${CUDA_LIBRARIES}
       CUDA::cusparse_static
       CUDA::cufft_static_nocallback
+      CUDA::cuda_driver
     )
    if(NOT BUILD_LAZY_CUDA_LINALG)
      if(CUDA_VERSION_MAJOR LESS_EQUAL 11)
@@ -573,6 +574,7 @@ if(USE_CUDA AND NOT USE_ROCM)
       ${CUDA_LIBRARIES}
       CUDA::cusparse
       CUDA::cufft
+      CUDA::cuda_driver
     )
    if(NOT BUILD_LAZY_CUDA_LINALG)
      list(APPEND ATen_CUDA_DEPENDENCY_LIBS

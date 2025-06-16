@@ -30,6 +30,7 @@ from . import gds
 from ._utils import _get_device_index
 from .graphs import (
     CUDAGraph,
+    CUDAGraphWithNodes,
     graph,
     graph_pool_handle,
     is_current_stream_capturing,
@@ -1802,6 +1803,7 @@ __all__ = [
     "ShortStorage",
     "ShortTensor",
     "CUDAGraph",
+    "CUDAGraphWithNodes",
     "CudaError",
     "DeferredCudaCallError",
     "Event",

@@ -1,0 +1,20 @@
+# Simple Makefile for testing CUDA Graph Node APIs
+
+NVCC = nvcc
+CFLAGS = -std=c++11 -O2 -arch=sm_90 -lcuda
+TARGET = test_cuda_graph_nodes
+SOURCE = test_cuda_graph_nodes.cu
+
+# Default target
+$(TARGET): $(SOURCE)
+	$(NVCC) $(CFLAGS) -o $(TARGET) $(SOURCE)
+
+# Run the test
+test: $(TARGET)
+	./$(TARGET)
+
+# Clean up
+clean:
+	rm -f $(TARGET)
+
+.PHONY: test clean
