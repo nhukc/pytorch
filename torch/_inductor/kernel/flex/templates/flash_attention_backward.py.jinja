@@ -7,6 +7,7 @@
 {% else %}
 {{def_kernel("Q", "K", "V", "OUT", "D_OUT", "LSE", "DK", "DV")}}
 {% endif %}
+    import math
     from flash_attn.cute.interface import _flash_attn_bwd
 
     q_transposed = Q.transpose(1, 2)
@@ -106,6 +107,6 @@
         block_sparse_tensors=block_sparse_tensors,
         deterministic=torch.are_deterministic_algorithms_enabled() and not torch.is_deterministic_algorithms_warn_only_enabled(),
         {% if HAS_GRAD_LSE %}
-        grad_logsumexp=GRAD_LSE,
+        dlse=GRAD_LSE * (1.0 / math.log(2)),
         {% endif %}
     )
