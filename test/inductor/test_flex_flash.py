@@ -1224,9 +1224,8 @@ class TestFlexFlash(InductorTestCase):
 
         flash_vs_triton(q, k, v, block_mask=block_mask)
 
-    @dtypes(torch.float16, torch.bfloat16)
-    def test_flash_backend_grad_logsumexp(self, device, dtype):
-        """Test that FLASH backend correctly differentiates through logsumexp."""
+    def _test_grad_logsumexp(self, device, dtype, score_mod=None):
+        """Helper: verify FLASH backend backward through logsumexp matches TRITON."""
         q, k, v = create_test_tensors(
             dim=128, dtype=dtype, device=device, requires_grad=True
         )
@@ -1237,14 +1236,16 @@ class TestFlexFlash(InductorTestCase):
 
         # FLASH backend
         out_flash, lse_flash = compiled_flex(
-            q, k, v, return_lse=True, kernel_options={"BACKEND": "FLASH"}
+            q, k, v, return_lse=True, score_mod=score_mod,
+            kernel_options={"BACKEND": "FLASH"},
         )
         loss_flash = out_flash.mean() + (lse_flash * lse_mask).sum()
         loss_flash.backward()
 
         # TRITON backend (reference)
         out_triton, lse_triton = compiled_flex(
-            q2, k2, v2, return_lse=True, kernel_options={"BACKEND": "TRITON"}
+            q2, k2, v2, return_lse=True, score_mod=score_mod,
+            kernel_options={"BACKEND": "TRITON"},
         )
         loss_triton = out_triton.mean() + (lse_triton * lse_mask).sum()
         loss_triton.backward()
@@ -1267,6 +1268,16 @@ class TestFlexFlash(InductorTestCase):
                 f"{name}: flash error {flash_err:.2e} exceeds "
                 f"{rtol}x triton error {triton_ref_err:.2e} + {atol:.2e}",
             )
+
+    @dtypes(torch.float16, torch.bfloat16)
+    def test_flash_backend_grad_logsumexp(self, device, dtype):
+        """Test that FLASH backend correctly differentiates through logsumexp."""
+        self._test_grad_logsumexp(device, dtype)
+
+    @dtypes(torch.float16, torch.bfloat16)
+    def test_flash_backend_grad_logsumexp_score_mod(self, device, dtype):
+        """Test grad_logsumexp with a score_mod applied."""
+        self._test_grad_logsumexp(device, dtype, score_mod=_times_two)
 
     @dtypes(torch.float16, torch.bfloat16)
     def test_flash_backend_raises_on_return_max_scores(self, device, dtype):
