@@ -1225,48 +1225,47 @@ class TestFlexFlash(InductorTestCase):
         flash_vs_triton(q, k, v, block_mask=block_mask)
 
     def _test_grad_logsumexp(self, device, dtype, score_mod=None):
-        """Helper: verify FLASH backend backward through logsumexp matches TRITON."""
+        """Helper: verify FLASH backend backward through logsumexp against fp32 ref."""
         q, k, v = create_test_tensors(
             dim=128, dtype=dtype, device=device, requires_grad=True
         )
-        q2, k2, v2 = (t.detach().clone().requires_grad_() for t in (q, k, v))
+        q_tri, k_tri, v_tri = (t.detach().clone().requires_grad_() for t in (q, k, v))
+        q_ref, k_ref, v_ref = (
+            t.detach().float().requires_grad_() for t in (q, k, v)
+        )
         lse_mask = torch.randn(2, 4, 512, device=device)
 
         compiled_flex = torch.compile(flex_attention)
 
-        # FLASH backend
-        out_flash, lse_flash = compiled_flex(
-            q, k, v, return_lse=True, score_mod=score_mod,
-            kernel_options={"BACKEND": "FLASH"},
-        )
-        loss_flash = out_flash.mean() + (lse_flash * lse_mask).sum()
-        loss_flash.backward()
+        def run_backward(q_, k_, v_, backend=None):
+            kwargs = {"return_lse": True, "score_mod": score_mod}
+            if backend:
+                kwargs["kernel_options"] = {"BACKEND": backend}
+            out, lse = compiled_flex(q_, k_, v_, **kwargs)
+            loss = out.mean() + (lse * lse_mask).sum()
+            loss.backward()
+            return q_.grad, k_.grad, v_.grad
 
-        # TRITON backend (reference)
-        out_triton, lse_triton = compiled_flex(
-            q2, k2, v2, return_lse=True, score_mod=score_mod,
-            kernel_options={"BACKEND": "TRITON"},
-        )
-        loss_triton = out_triton.mean() + (lse_triton * lse_mask).sum()
-        loss_triton.backward()
+        grads_flash = run_backward(q, k, v, "FLASH")
+        grads_triton = run_backward(q_tri, k_tri, v_tri, "TRITON")
+        grads_ref = run_backward(q_ref, k_ref, v_ref, "TRITON")
 
         rtol = 2
-        for name, grad_flash, grad_triton in [
-            ("dq", q.grad, q2.grad),
-            ("dk", k.grad, k2.grad),
-            ("dv", v.grad, v2.grad),
-        ]:
+        for name, g_flash, g_triton, g_ref in zip(
+            ("dq", "dk", "dv"), grads_flash, grads_triton, grads_ref
+        ):
+            g_ref = g_ref.to(dtype)
+            self.assertTrue(torch.isfinite(g_flash).all(),
+                            f"{name} flash grad contains non-finite values")
+            self.assertTrue(torch.isfinite(g_triton).all(),
+                            f"{name} triton grad contains non-finite values")
+            atol = 2 * (g_ref + 0.3 - 0.3 - g_ref).abs().max().item()
+            triton_err = (g_triton - g_ref).abs().max().item()
+            flash_err = (g_flash - g_ref).abs().max().item()
             self.assertTrue(
-                torch.isfinite(grad_flash).all(),
-                f"{name} flash grad contains non-finite values",
-            )
-            atol = 2 * (grad_triton + 0.3 - 0.3 - grad_triton).abs().max().item()
-            triton_ref_err = (grad_triton - grad_triton.float()).abs().max().item()
-            flash_err = (grad_flash - grad_triton).abs().max().item()
-            self.assertTrue(
-                flash_err <= rtol * triton_ref_err + atol,
+                flash_err <= rtol * triton_err + atol,
                 f"{name}: flash error {flash_err:.2e} exceeds "
-                f"{rtol}x triton error {triton_ref_err:.2e} + {atol:.2e}",
+                f"{rtol}x triton error {triton_err:.2e} + {atol:.2e}",
             )
 
     @dtypes(torch.float16, torch.bfloat16)
