@@ -554,6 +554,7 @@ def create_flex_flash_attention_backward_kernel(
     q_indices: TensorBox | None = None,
     full_q_num_blocks: TensorBox | None = None,
     full_q_indices: TensorBox | None = None,
+    grad_logsumexp: TensorBox | None = None,
 ) -> tuple[TensorBox | ShapeAsConstantBuffer, TensorBox, TensorBox, tuple]:
     """Create a CuteDSL flash attention backward kernel for the default mod path."""
     if not ensure_flash_available():
@@ -633,6 +634,10 @@ def create_flex_flash_attention_backward_kernel(
             ]
         )
 
+    has_grad_lse = grad_logsumexp is not None
+    if has_grad_lse:
+        input_nodes.append(grad_logsumexp)
+
     has_score_mod = fw_subgraph_buffer is not None and joint_subgraph_buffer is not None
     subgraphs = []
     if has_score_mod:
@@ -656,6 +661,7 @@ def create_flex_flash_attention_backward_kernel(
                 HAS_SCORE_MOD=has_score_mod,
                 SCORE_MOD_VEC_SIZE=conf.score_mod_vec_size,
                 HAS_BLOCK_MASK=has_block_mask,
+                HAS_GRAD_LSE=has_grad_lse,
                 SPARSE_Q_BLOCK_SIZE=sparse_q_block_size,
                 SPARSE_KV_BLOCK_SIZE=sparse_kv_block_size,
             )

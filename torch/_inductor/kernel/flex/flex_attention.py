@@ -798,15 +798,6 @@ def flex_attention_backward(*args, **kwargs):
                 "Deterministic backward for flex_attention with block_mask using the FLASH backend "
                 "is not yet implemented. Running non-deterministic backward.",
             )
-        # TODO: Implement dLSE support in flash-attention backward by folding
-        # grad_logsumexp into the dPsum preprocess step.
-        if grad_logsumexp is not None:
-            raise NotImplementedError(
-                "FLASH backend backward does not support differentiating through "
-                "logsumexp (dLSE). This happens when the loss depends on the LSE "
-                "output of flex_attention. "
-                "Use BACKEND='TRITON' or avoid differentiating through logsumexp."
-            )
         score_is_trivial = is_trivial_score_graph(fw_graph.graph_module)
         return create_flex_flash_attention_backward_kernel(
             query,
@@ -829,6 +820,7 @@ def flex_attention_backward(*args, **kwargs):
             q_indices=q_indices if needs_block_mask else None,
             full_q_num_blocks=full_q_num_blocks if needs_block_mask else None,
             full_q_indices=full_q_indices if needs_block_mask else None,
+            grad_logsumexp=grad_logsumexp,
         )
 
     # Construct layout with stride order matching K

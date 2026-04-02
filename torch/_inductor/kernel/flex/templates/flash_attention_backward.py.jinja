@@ -1,5 +1,9 @@
-{% if HAS_BLOCK_MASK %}
+{% if HAS_BLOCK_MASK and HAS_GRAD_LSE %}
+{{def_kernel("Q", "K", "V", "OUT", "D_OUT", "LSE", "DK", "DV", "Q_NUM_BLKS", "Q_IDX", "FULL_Q_NUM_BLKS", "FULL_Q_IDX", "GRAD_LSE")}}
+{% elif HAS_BLOCK_MASK %}
 {{def_kernel("Q", "K", "V", "OUT", "D_OUT", "LSE", "DK", "DV", "Q_NUM_BLKS", "Q_IDX", "FULL_Q_NUM_BLKS", "FULL_Q_IDX")}}
+{% elif HAS_GRAD_LSE %}
+{{def_kernel("Q", "K", "V", "OUT", "D_OUT", "LSE", "DK", "DV", "GRAD_LSE")}}
 {% else %}
 {{def_kernel("Q", "K", "V", "OUT", "D_OUT", "LSE", "DK", "DV")}}
 {% endif %}
@@ -100,5 +104,8 @@
         dk=dk_out_transposed,
         dv=dv_out_transposed,
         block_sparse_tensors=block_sparse_tensors,
-        deterministic=torch.are_deterministic_algorithms_enabled() and not torch.is_deterministic_algorithms_warn_only_enabled()
+        deterministic=torch.are_deterministic_algorithms_enabled() and not torch.is_deterministic_algorithms_warn_only_enabled(),
+        {% if HAS_GRAD_LSE %}
+        grad_logsumexp=GRAD_LSE,
+        {% endif %}
     )
