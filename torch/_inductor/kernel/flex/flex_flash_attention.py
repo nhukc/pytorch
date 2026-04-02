@@ -14,7 +14,7 @@ from sympy import Expr, Integer
 import torch
 from torch.fx import GraphModule
 
-from ...ir import FixedLayout, ShapeAsConstantBuffer, Subgraph, TensorBox
+from ...ir import ExternKernel, FixedLayout, ShapeAsConstantBuffer, Subgraph, TensorBox
 from ...lowering import empty_strided
 from ...select_algorithm import autotune_select_algorithm
 from ...virtualized import V
@@ -636,6 +636,7 @@ def create_flex_flash_attention_backward_kernel(
 
     has_grad_lse = grad_logsumexp is not None
     if has_grad_lse:
+        grad_logsumexp = ExternKernel.require_contiguous(grad_logsumexp)
         input_nodes.append(grad_logsumexp)
 
     has_score_mod = fw_subgraph_buffer is not None and joint_subgraph_buffer is not None
