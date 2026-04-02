@@ -1227,7 +1227,9 @@ class TestFlexFlash(InductorTestCase):
     @dtypes(torch.float16, torch.bfloat16)
     def test_flash_backend_grad_logsumexp(self, device, dtype):
         """Test that FLASH backend correctly differentiates through logsumexp."""
-        q, k, v = create_test_tensors(dtype=dtype, device=device, requires_grad=True)
+        q, k, v = create_test_tensors(
+            dim=128, dtype=dtype, device=device, requires_grad=True
+        )
         q2, k2, v2 = (t.detach().clone().requires_grad_() for t in (q, k, v))
         lse_mask = torch.randn(2, 4, 512, device=device)
 
