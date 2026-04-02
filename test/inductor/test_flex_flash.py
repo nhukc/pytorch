@@ -1225,22 +1225,46 @@ class TestFlexFlash(InductorTestCase):
         flash_vs_triton(q, k, v, block_mask=block_mask)
 
     @dtypes(torch.float16, torch.bfloat16)
-    def test_flash_backend_raises_on_grad_logsumexp(self, device, dtype):
-        from torch._dynamo.exc import BackendCompilerFailed
-
+    def test_flash_backend_grad_logsumexp(self, device, dtype):
+        """Test that FLASH backend correctly differentiates through logsumexp."""
         q, k, v = create_test_tensors(dtype=dtype, device=device, requires_grad=True)
+        q2, k2, v2 = (t.detach().clone().requires_grad_() for t in (q, k, v))
         lse_mask = torch.randn(2, 4, 512, device=device)
 
         compiled_flex = torch.compile(flex_attention)
-        out, lse = compiled_flex(
+
+        # FLASH backend
+        out_flash, lse_flash = compiled_flex(
             q, k, v, return_lse=True, kernel_options={"BACKEND": "FLASH"}
         )
-        loss = out.mean() + (lse * lse_mask).sum()
-        with self.assertRaisesRegex(
-            BackendCompilerFailed,
-            "FLASH backend backward does not support differentiating through logsumexp",
-        ):
-            loss.backward()
+        loss_flash = out_flash.mean() + (lse_flash * lse_mask).sum()
+        loss_flash.backward()
+
+        # TRITON backend (reference)
+        out_triton, lse_triton = compiled_flex(
+            q2, k2, v2, return_lse=True, kernel_options={"BACKEND": "TRITON"}
+        )
+        loss_triton = out_triton.mean() + (lse_triton * lse_mask).sum()
+        loss_triton.backward()
+
+        rtol = 2
+        for name, grad_flash, grad_triton in [
+            ("dq", q.grad, q2.grad),
+            ("dk", k.grad, k2.grad),
+            ("dv", v.grad, v2.grad),
+        ]:
+            self.assertTrue(
+                torch.isfinite(grad_flash).all(),
+                f"{name} flash grad contains non-finite values",
+            )
+            atol = 2 * (grad_triton + 0.3 - 0.3 - grad_triton).abs().max().item()
+            triton_ref_err = (grad_triton - grad_triton.float()).abs().max().item()
+            flash_err = (grad_flash - grad_triton).abs().max().item()
+            self.assertTrue(
+                flash_err <= rtol * triton_ref_err + atol,
+                f"{name}: flash error {flash_err:.2e} exceeds "
+                f"{rtol}x triton error {triton_ref_err:.2e} + {atol:.2e}",
+            )
 
     @dtypes(torch.float16, torch.bfloat16)
     def test_flash_backend_raises_on_return_max_scores(self, device, dtype):
